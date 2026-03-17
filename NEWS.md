@@ -1,3 +1,5 @@
+# mcptools (development version)
+
 # mcptools 0.2.1
 
 * `mcp_server()` now ensures that `inputSchema` always includes a `properties`
