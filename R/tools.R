@@ -118,9 +118,7 @@ list_r_sessions_description <- paste(
   "R sessions which have run `mcptools::mcp_session()` will appear here.",
   "In the output, start each session with 'Session #' and do NOT otherwise",
   "prefix any index numbers to the output.",
-  "In general, do not use this tool unless asked to list or",
-  "select a specific R session.",
-  "Given the output of this tool, report the users to the user.",
+  "Given the output of this tool, report the sessions to the user.",
   "Do NOT make a choice of R session based on the results of the tool",
   "and call select_r_session unless the user asks you to specifically."
 )
@@ -143,8 +141,8 @@ select_r_session <- function(session) {
 select_r_session_description <- paste(
   "Choose the R session of interest.",
   "Use the `list_r_sessions` tool to discover potential sessions.",
-  "In general, do not use this tool unless asked to select a specific R",
-  "session; the tools available to you have a default R session",
+  "In general, **do not use this tool unless asked to select a specific R",
+  "session**; the tools available to you have a default R session",
   "that is usually the one the user wants.",
   "Do not call this tool immediately after calling list_r_sessions",
   "unless you've been asked to select an R session and haven't yet",
