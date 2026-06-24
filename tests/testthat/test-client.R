@@ -87,6 +87,39 @@ test_that("mcp_tools() returns mcpServers when valid", {
   expect_equal(result, config$mcpServers)
 })
 
+test_that("mcp_tools() inherits an allowlisted environment", {
+  withr::local_envvar(
+    R_LIBS_USER = "r-library",
+    GITHUB_PAT = "secret"
+  )
+
+  env <- mcp_server_env(list())
+
+  expect_identical(env[["R_LIBS_USER"]], "r-library")
+  expect_false("GITHUB_PAT" %in% names(env))
+})
+
+test_that("mcp_tools() overlays configured env on inherited env", {
+  withr::local_envvar(PATH = "inherited-path")
+  config <- list(env = list(
+    PATH = "configured-path",
+    MCPTOOLS_TEST_ENVVAR = "value"
+  ))
+
+  env <- mcp_server_env(config)
+
+  expect_identical(env[["PATH"]], "configured-path")
+  expect_identical(env[["MCPTOOLS_TEST_ENVVAR"]], "value")
+})
+
+test_that("mcp_tools() skips inherited bash functions", {
+  withr::local_envvar(R_PROFILE = "() { :; }; echo vulnerable")
+
+  env <- mcp_server_env(list())
+
+  expect_false("R_PROFILE" %in% names(env))
+})
+
 test_that("mcp_tool_result_as_ellmer handles text content", {
   response <- list(
     result = list(

@@ -39,7 +39,11 @@ the$mcp_servers <- list()
 #'
 #' The mcptools config file should be valid .json with an entry `mcpServers`.
 #' That entry should contain named elements, each with at least a `command`
-#' and `args` entry.
+#' and `args` entry. MCP server processes receive an allowlisted environment
+#' inherited from the current R process, plus any variables configured in
+#' `env`. Configured `env` variables override inherited variables with the same
+#' name. Servers that need additional environment variables should list them in
+#' `env`.
 #'
 #' For example, to configure `mcp_tools()` with GitHub's official MCP Server
 #' <https://github.com/github/github-mcp-server>, you could write the following
@@ -203,16 +207,10 @@ error_no_mcp_config <- function(call) {
 }
 
 add_mcp_server <- function(config, name, call = caller_env()) {
-  config_env <- if ("env" %in% names(config)) {
-    unlist(config$env)
-  } else {
-    NULL
-  }
-
   process <- processx::process$new(
     command = Sys.which(config$command),
     args = config$args %||% character(),
-    env = config_env,
+    env = mcp_server_env(config),
     stdin = "|",
     stdout = "|",
     stderr = "|"
@@ -266,6 +264,49 @@ add_mcp_server <- function(config, name, call = caller_env()) {
   )
 
   the$mcp_servers[[name]]
+}
+
+mcp_server_env <- function(config) {
+  env <- mcp_inherited_env()
+
+  if ("env" %in% names(config)) {
+    configured <- unlist(config$env, use.names = TRUE)
+    env[names(configured)] <- configured
+  }
+
+  env
+}
+
+mcp_inherited_env <- function() {
+  env <- Sys.getenv(mcp_inherited_env_vars(), unset = NA_character_)
+  env <- env[!is.na(env)]
+  # Skip exported bash functions, which can trigger shellshock-style behavior.
+  env[!startsWith(env, "()")]
+}
+
+mcp_inherited_env_vars <- function() {
+  platform_vars <- if (identical(.Platform$OS.type, "windows")) {
+    c(
+      "APPDATA", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATH", "PATHEXT",
+      "PROCESSOR_ARCHITECTURE", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "TMP",
+      "USERNAME", "USERPROFILE", "WINDIR"
+    )
+  } else {
+    c("HOME", "LOGNAME", "PATH", "SHELL", "TERM", "TMPDIR", "USER")
+  }
+
+  unique(c(
+    platform_vars,
+    "R_HOME", "R_LIBS", "R_LIBS_USER", "R_LIBS_SITE", "R_PROFILE",
+    "R_PROFILE_USER", "R_ENVIRON", "R_ENVIRON_USER", "R_USER", "TZ",
+    "LANG", "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_MESSAGES",
+    "LC_MONETARY", "LC_NUMERIC", "LC_TIME", "LC_ADDRESS",
+    "LC_IDENTIFICATION", "LC_MEASUREMENT", "LC_NAME", "LC_PAPER",
+    "LC_TELEPHONE", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy",
+    "https_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
+    "JAVA_HOME"
+  ))
 }
 
 servers_as_ellmer_tools <- function() {

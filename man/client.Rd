@@ -41,7 +41,11 @@ file with \code{file.edit(file.path("~", ".config", "mcptools", "config.json"))}
 
 The mcptools config file should be valid .json with an entry \code{mcpServers}.
 That entry should contain named elements, each with at least a \code{command}
-and \code{args} entry.
+and \code{args} entry. MCP server processes receive an allowlisted environment
+inherited from the current R process, plus any variables configured in
+\code{env}. Configured \code{env} variables override inherited variables with the same
+name. Servers that need additional environment variables should list them in
+\code{env}.
 
 For example, to configure \code{mcp_tools()} with GitHub's official MCP Server
 \url{https://github.com/github/github-mcp-server}, you could write the following
