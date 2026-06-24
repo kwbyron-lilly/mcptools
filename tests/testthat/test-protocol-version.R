@@ -75,3 +75,34 @@ test_that("capabilities always includes required fields", {
     expect_equal(res$serverInfo$name, "R mcptools server")
   }
 })
+
+test_that("initialize stores negotiated protocol version", {
+  local_protocol_version()
+
+  response <- handle_http_request_message(list(
+    id = 1,
+    method = "initialize",
+    params = list(protocolVersion = "2025-06-18")
+  ))
+
+  expect_equal(response$result$protocolVersion, "2025-06-18")
+  expect_equal(the$protocol_version, "2025-06-18")
+})
+
+test_that("tool calls inherit negotiated protocol version", {
+  old_tools <- the$server_tools
+  withr::defer({
+    the$server_tools <- old_tools
+  })
+
+  local_protocol_version("2025-06-18")
+  set_server_tools(NULL)
+
+  prepared <- append_tool_fn(list(
+    id = 1,
+    method = "tools/call",
+    params = list(name = "list_r_sessions", arguments = list())
+  ))
+
+  expect_equal(prepared$protocolVersion, "2025-06-18")
+})

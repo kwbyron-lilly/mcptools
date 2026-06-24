@@ -300,6 +300,7 @@ handle_http_request_message <- function(data) {
     # we fall back rather than erroring
     client_version <- data$params$protocolVersion %||% latest_protocol_version
     negotiated <- negotiate_protocol_version(client_version)
+    the$protocol_version <- negotiated
     return(jsonrpc_response(data$id, capabilities(negotiated)))
   } else if (data$method == "tools/list") {
     return(jsonrpc_response(
@@ -373,6 +374,7 @@ handle_message_from_client <- function(line) {
     # we fall back rather than erroring
     client_version <- data$params$protocolVersion %||% latest_protocol_version
     negotiated <- negotiate_protocol_version(client_version)
+    the$protocol_version <- negotiated
     res <- jsonrpc_response(data$id, capabilities(negotiated))
     cat_json(res)
   } else if (data$method == "tools/list") {
@@ -567,6 +569,9 @@ append_tool_fn <- function(data) {
     ))
   }
 
+  data$protocolVersion <- data$protocolVersion %||%
+    the$protocol_version %||%
+    latest_protocol_version
   data$tool <- get_mcptools_tools()[[tool_name]]
   data
 }

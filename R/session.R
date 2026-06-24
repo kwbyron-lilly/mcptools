@@ -1,7 +1,6 @@
 #' @rdname server
 #' @export
 mcp_session <- function() {
-
   the$session_socket <- nanonext::socket("poly")
   i <- 1L
   while (i < 1024L) {
@@ -60,16 +59,29 @@ as_tool_call_result <- function(data, result) {
     is_error <- !is.null(result@error)
   }
 
+  structured_content <- as_mcp_structured_content(
+    result,
+    data$protocolVersion %||% the$protocol_version %||% latest_protocol_version
+  )
+
   jsonrpc_response(
     data$id,
-    list(
-      content = as_mcp_content(result),
+    drop_nulls(list(
+      content = as_mcp_content(result, structured_content),
+      structuredContent = structured_content,
       isError = is_error
-    )
+    ))
   )
 }
 
-as_mcp_content <- function(result) {
+as_mcp_content <- function(result, structured_content = NULL) {
+  if (!is.null(structured_content)) {
+    return(list(list(
+      type = "text",
+      text = as.character(to_json(structured_content))
+    )))
+  }
+
   if (inherits(result, "ellmer::ContentToolResult")) {
     value <- result@value
     if (has_mcp_content(value)) {
@@ -118,6 +130,60 @@ format_mcp_text <- function(result) {
 
 format_default_result <- function(result) {
   paste(result, collapse = "\n")
+}
+
+as_mcp_structured_content <- function(result, protocol_version) {
+  if (protocol_version_lt(protocol_version, "2025-06-18")) {
+    return(NULL)
+  }
+
+  result <- unwrap_tool_result_value(result)
+  if (is.null(result) || has_mcp_content(result)) {
+    return(NULL)
+  }
+
+  if (!is_structured_content_result(result)) {
+    return(NULL)
+  }
+
+  jsonlite::parse_json(to_json(as_json_object_result(result)))
+}
+
+unwrap_tool_result_value <- function(result) {
+  if (!inherits(result, "ellmer::ContentToolResult")) {
+    return(result)
+  }
+
+  if (!is.null(result@error)) {
+    return(NULL)
+  }
+
+  result@value
+}
+
+is_structured_content_result <- function(result) {
+  if (inherits(result, "ellmer::Content")) {
+    return(FALSE)
+  }
+
+  if (is.data.frame(result) || is.matrix(result) || is.array(result)) {
+    return(FALSE)
+  }
+
+  result_names <- names(result)
+  if (is.null(result_names)) {
+    return(FALSE)
+  }
+
+  length(result_names) == length(result) && all(nzchar(result_names))
+}
+
+as_json_object_result <- function(result) {
+  if (is.atomic(result)) {
+    return(as.list(result))
+  }
+
+  result
 }
 
 has_mcp_content <- function(result) {

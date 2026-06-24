@@ -1,5 +1,9 @@
 # mcptools (development version)
 
+* `mcp_server()` now returns `structuredContent` alongside serialized JSON text
+  for successful tool results that are naturally represented as JSON objects
+  when using MCP protocol version 2025-06-18 or later (#104).
+
 * `mcp_server()` now includes ellmer tool annotations in `tools/list`
   responses, preserving MCP safety hints such as `readOnlyHint`,
   `destructiveHint`, `idempotentHint`, and `openWorldHint` (#100).
