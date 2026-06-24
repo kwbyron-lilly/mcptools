@@ -90,6 +90,8 @@ test_that("tool_as_json includes annotations", {
 
   res <- tool_as_json(tool)
 
+  expect_equal(res$title, "Read Project")
+
   expected_annotations <- list(
     title = "Read Project",
     readOnlyHint = TRUE,
@@ -98,6 +100,20 @@ test_that("tool_as_json includes annotations", {
   )
   expect_setequal(names(res$annotations), names(expected_annotations))
   expect_equal(res$annotations[names(expected_annotations)], expected_annotations)
+})
+
+test_that("tool_as_json gates top-level title on protocol version", {
+  tool <- ellmer::tool(
+    function() "ok",
+    "Read project state",
+    name = "read_project",
+    annotations = ellmer::tool_annotations(title = "Read Project")
+  )
+
+  res <- tool_as_json(tool, protocol_version = "2025-03-26")
+
+  expect_false("title" %in% names(res))
+  expect_equal(res$annotations$title, "Read Project")
 })
 
 test_that("tools/list preserves tool annotations", {
@@ -109,6 +125,7 @@ test_that("tools/list preserves tool annotations", {
     "Read project state",
     name = "read_project",
     annotations = ellmer::tool_annotations(
+      title = "Read Project",
       read_only_hint = TRUE,
       idempotent_hint = TRUE,
       open_world_hint = FALSE
@@ -144,10 +161,12 @@ test_that("tools/list preserves tool annotations", {
   ))
 
   read_project_annotations <- list(
+    title = "Read Project",
     readOnlyHint = TRUE,
     openWorldHint = FALSE,
     idempotentHint = TRUE
   )
+  expect_equal(tools$read_project$title, "Read Project")
   expect_setequal(
     names(tools$read_project$annotations),
     names(read_project_annotations)
@@ -170,4 +189,27 @@ test_that("tools/list preserves tool annotations", {
     delete_project_annotations
   )
   expect_false("annotations" %in% names(tools$unannotated))
+})
+
+test_that("tools/list gates top-level title on negotiated protocol version", {
+  old_server_tools <- the$server_tools
+  withr::defer(the$server_tools <- old_server_tools)
+  local_protocol_version("2025-03-26")
+
+  tool <- ellmer::tool(
+    function() "ok",
+    "Read project state",
+    name = "read_project",
+    annotations = ellmer::tool_annotations(title = "Read Project")
+  )
+  set_server_tools(list(tool), session_tools = FALSE)
+
+  res <- handle_http_request_message(list(
+    id = 1,
+    method = "tools/list"
+  ))
+  tool <- res$result$tools[[1]]
+
+  expect_false("title" %in% names(tool))
+  expect_equal(tool$annotations$title, "Read Project")
 })

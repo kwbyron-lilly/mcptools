@@ -165,8 +165,14 @@ get_mcptools_tools <- function() {
   set_names(res, vapply(res, \(x) x@name, character(1)))
 }
 
-get_mcptools_tools_as_json <- function() {
-  tools <- lapply(unname(get_mcptools_tools()), tool_as_json)
+get_mcptools_tools_as_json <- function(
+  protocol_version = the$protocol_version %||% latest_protocol_version
+) {
+  tools <- lapply(
+    unname(get_mcptools_tools()),
+    tool_as_json,
+    protocol_version = protocol_version
+  )
 
   compact(tools)
 }

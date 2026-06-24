@@ -478,7 +478,7 @@ capabilities <- function(protocol_version = latest_protocol_version) {
   res
 }
 
-tool_as_json <- function(tool) {
+tool_as_json <- function(tool, protocol_version = latest_protocol_version) {
   dummy_provider <- ellmer::Provider("dummy", "dummy", "dummy")
 
   as_json <- getNamespace("ellmer")[["as_json"]]
@@ -494,10 +494,19 @@ tool_as_json <- function(tool) {
 
   compact(list(
     name = tool@name,
+    title = tool_title_as_json(tool@annotations, protocol_version),
     description = tool@description,
     inputSchema = inputSchema,
     annotations = tool_annotations_as_json(tool@annotations)
   ))
+}
+
+tool_title_as_json <- function(annotations, protocol_version) {
+  if (protocol_version_lt(protocol_version, "2025-06-18")) {
+    return(NULL)
+  }
+
+  annotations$title
 }
 
 tool_annotations_as_json <- function(annotations) {

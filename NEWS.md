@@ -5,8 +5,8 @@
   when using MCP protocol version 2025-06-18 or later (#104).
 
 * `mcp_server()` now includes ellmer tool annotations in `tools/list`
-  responses, preserving MCP safety hints such as `readOnlyHint`,
-  `destructiveHint`, `idempotentHint`, and `openWorldHint` (#100).
+  responses, preserving MCP safety hints such as `title`, `readOnlyHint`,
+  `destructiveHint`, `idempotentHint`, and `openWorldHint` (#100, #105).
 
 * `mcp_server()` can now return inline image content from tools that produce
   `ellmer::ContentImageInline` results, including mixed text and image content
