@@ -490,11 +490,31 @@ tool_as_json <- function(tool) {
     inputSchema$properties <- structure(list(), names = character())
   }
 
-  list(
+  compact(list(
     name = tool@name,
     description = tool@description,
-    inputSchema = inputSchema
+    inputSchema = inputSchema,
+    annotations = tool_annotations_as_json(tool@annotations)
+  ))
+}
+
+tool_annotations_as_json <- function(annotations) {
+  if (!length(annotations)) {
+    return(NULL)
+  }
+
+  mcp_names <- c(
+    read_only_hint = "readOnlyHint",
+    destructive_hint = "destructiveHint",
+    idempotent_hint = "idempotentHint",
+    open_world_hint = "openWorldHint"
   )
+  annotation_names <- names(annotations)
+  matched_names <- annotation_names %in% names(mcp_names)
+  annotation_names[matched_names] <- mcp_names[annotation_names[matched_names]]
+  names(annotations) <- annotation_names
+
+  annotations
 }
 
 compact <- function(.x) {

@@ -74,3 +74,100 @@ test_that("get_mcptools_tools_as_json works", {
     logical(1)
   )))
 })
+
+test_that("tool_as_json includes annotations", {
+  tool <- ellmer::tool(
+    function() "ok",
+    "Read project state",
+    name = "read_project",
+    annotations = ellmer::tool_annotations(
+      title = "Read Project",
+      read_only_hint = TRUE,
+      idempotent_hint = TRUE,
+      open_world_hint = FALSE
+    )
+  )
+
+  res <- tool_as_json(tool)
+
+  expected_annotations <- list(
+    title = "Read Project",
+    readOnlyHint = TRUE,
+    openWorldHint = FALSE,
+    idempotentHint = TRUE
+  )
+  expect_setequal(names(res$annotations), names(expected_annotations))
+  expect_equal(res$annotations[names(expected_annotations)], expected_annotations)
+})
+
+test_that("tools/list preserves tool annotations", {
+  old_server_tools <- the$server_tools
+  withr::defer(the$server_tools <- old_server_tools)
+
+  read_project <- ellmer::tool(
+    function() "ok",
+    "Read project state",
+    name = "read_project",
+    annotations = ellmer::tool_annotations(
+      read_only_hint = TRUE,
+      idempotent_hint = TRUE,
+      open_world_hint = FALSE
+    )
+  )
+  delete_project <- ellmer::tool(
+    function() "ok",
+    "Delete project",
+    name = "delete_project",
+    annotations = ellmer::tool_annotations(
+      destructive_hint = TRUE,
+      open_world_hint = FALSE
+    )
+  )
+  unannotated <- ellmer::tool(
+    function() "ok",
+    "No annotations",
+    name = "unannotated"
+  )
+  set_server_tools(
+    list(read_project, delete_project, unannotated),
+    session_tools = FALSE
+  )
+
+  res <- handle_http_request_message(list(
+    id = 1,
+    method = "tools/list"
+  ))
+  tools <- setNames(res$result$tools, vapply(
+    res$result$tools,
+    function(x) x$name,
+    character(1)
+  ))
+
+  read_project_annotations <- list(
+    readOnlyHint = TRUE,
+    openWorldHint = FALSE,
+    idempotentHint = TRUE
+  )
+  expect_setequal(
+    names(tools$read_project$annotations),
+    names(read_project_annotations)
+  )
+  expect_equal(
+    tools$read_project$annotations[names(read_project_annotations)],
+    read_project_annotations
+  )
+
+  delete_project_annotations <- list(
+    openWorldHint = FALSE,
+    destructiveHint = TRUE
+  )
+  expect_setequal(
+    names(tools$delete_project$annotations),
+    names(delete_project_annotations)
+  )
+  expect_equal(
+    tools$delete_project$annotations[names(delete_project_annotations)],
+    delete_project_annotations
+  )
+  expect_false("annotations" %in% names(tools$unannotated))
+})
