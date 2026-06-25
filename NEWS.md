@@ -1,5 +1,12 @@
 # mcptools (development version)
 
+* Forwarded `mcp_session()` tool calls now return JSON-RPC errors when the
+  selected R session does not respond within two minutes, rather than hanging
+  indefinitely. Configure the timeout with the
+  `mcptools.session_response_timeout_seconds` option or the
+  `MCPTOOLS_SESSION_RESPONSE_TIMEOUT_SECONDS` environment variable. Session
+  receive errors are also logged instead of silently discarded (#98).
+
 * `mcp_server()` now returns `structuredContent` alongside serialized JSON text
   for successful tool results that are naturally represented as JSON objects
   when using MCP protocol version 2025-06-18 or later (#104).

@@ -206,10 +206,14 @@ is_mcp_content <- function(result) {
 schedule_handle_message_from_server <- function() {
   the$raio <- nanonext::recv_aio(the$session_socket, mode = "serial")
   promises::as.promise(the$raio)$then(handle_message_from_server)$catch(
-    \(e) {
-      # no op but ensures promise is never rejected
-    }
+    log_session_error
   )
+}
+
+log_session_error <- function(e) {
+  msg <- paste("[mcptools] session error:", conditionMessage(e))
+  message(msg)
+  logcat(msg)
 }
 
 # Create a jsonrpc-structured response object.

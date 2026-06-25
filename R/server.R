@@ -165,26 +165,13 @@ mcp_server_stdio <- function() {
   nanonext::pipe_notify(reader_socket, cv, remove = TRUE, flag = TRUE)
   client <- nanonext::recv_aio(reader_socket, mode = "string", cv = cv)
 
-  if (!the$sessions_enabled) {
-    while (nanonext::wait(cv)) {
-      if (!nanonext::unresolved(client)) {
-        handle_message_from_client(client$data)
-        client <- nanonext::recv_aio(reader_socket, mode = "string", cv = cv)
-      }
-    }
-    return()
+  if (the$sessions_enabled) {
+    the$server_socket <- nanonext::socket("poly")
+    on.exit(nanonext::reap(the$server_socket), add = TRUE)
+    nanonext::dial(the$server_socket, url = sprintf("%s%d", the$socket_url, 1L))
   }
 
-  the$server_socket <- nanonext::socket("poly")
-  on.exit(nanonext::reap(the$server_socket), add = TRUE)
-  nanonext::dial(the$server_socket, url = sprintf("%s%d", the$socket_url, 1L))
-  session <- nanonext::recv_aio(the$server_socket, mode = "string", cv = cv)
-
   while (nanonext::wait(cv)) {
-    if (!nanonext::unresolved(session)) {
-      handle_message_from_session(session$data)
-      session <- nanonext::recv_aio(the$server_socket, mode = "string", cv = cv)
-    }
     if (!nanonext::unresolved(client)) {
       handle_message_from_client(client$data)
       client <- nanonext::recv_aio(reader_socket, mode = "string", cv = cv)
@@ -325,9 +312,7 @@ handle_http_request_message <- function(data) {
         return(prepared)
       }
 
-      nanonext::send(the$server_socket, prepared, mode = "serial")
-      response_raw <- nanonext::recv(the$server_socket, mode = "character")
-      return(jsonlite::parse_json(response_raw))
+      return(forward_request(data))
     }
   } else {
     return(jsonrpc_response(
@@ -400,6 +385,8 @@ handle_message_from_client <- function(line) {
       handle_request(data)
     } else {
       result <- forward_request(data)
+      logcat(c("FROM SESSION: ", to_json(result)))
+      cat_json(result)
     }
   } else if (is.null(data$id)) {
     # If there is no `id` in the request, then this is a notification and the
@@ -433,7 +420,142 @@ forward_request <- function(data) {
     return(prepared)
   }
 
-  nanonext::send_aio(the$server_socket, prepared, mode = "serial")
+  drain_stale_forwarded_responses()
+
+  timeout <- session_response_timeout()
+  send_result <- nanonext::send(
+    the$server_socket,
+    prepared,
+    mode = "serial",
+    block = timeout
+  )
+
+  if (nanonext::is_error_value(send_result) || !identical(send_result, 0L)) {
+    return(session_forwarding_error(
+      data$id,
+      "Failed to send the request to the selected R session."
+    ))
+  }
+
+  receive_forwarded_response(data$id, timeout)
+}
+
+receive_forwarded_response <- function(id, timeout) {
+  deadline <- Sys.time() + timeout / 1000
+
+  repeat {
+    response_raw <- nanonext::recv(
+      the$server_socket,
+      mode = "character",
+      block = remaining_timeout(deadline)
+    )
+
+    if (!is.character(response_raw) || nanonext::is_error_value(response_raw)) {
+      return(session_forwarding_error(
+        id,
+        sprintf(
+          "Timed out waiting for a response from the selected R session after %s.",
+          format_timeout(timeout)
+        )
+      ))
+    }
+
+    response <- tryCatch(
+      jsonlite::parse_json(response_raw),
+      error = function(err) {
+        session_forwarding_error(
+          id,
+          paste(
+            "Received an invalid response from the selected R session:",
+            conditionMessage(err)
+          )
+        )
+      }
+    )
+
+    if (!is.list(response)) {
+      return(session_forwarding_error(
+        id,
+        "Received an invalid response from the selected R session."
+      ))
+    }
+
+    if (matches_jsonrpc_id(response, id)) {
+      return(response)
+    }
+
+    logcat(c(
+      "Ignoring stale forwarded response for request id ",
+      format_jsonrpc_id(response)
+    ))
+  }
+}
+
+drain_stale_forwarded_responses <- function() {
+  repeat {
+    response_raw <- nanonext::recv(
+      the$server_socket,
+      mode = "character",
+      block = FALSE
+    )
+
+    if (!is.character(response_raw) || nanonext::is_error_value(response_raw)) {
+      return(invisible())
+    }
+
+    logcat(c("Ignoring queued stale forwarded response: ", response_raw))
+  }
+}
+
+session_forwarding_error <- function(id, message) {
+  jsonrpc_response(
+    id,
+    error = list(code = -32603, message = message)
+  )
+}
+
+remaining_timeout <- function(deadline) {
+  remaining <- as.numeric(difftime(deadline, Sys.time(), units = "secs"))
+  max(1L, as.integer(ceiling(remaining * 1000)))
+}
+
+matches_jsonrpc_id <- function(response, id) {
+  identical(response$id, id)
+}
+
+session_response_timeout <- function() {
+  seconds <- getOption(
+    "mcptools.session_response_timeout_seconds",
+    Sys.getenv("MCPTOOLS_SESSION_RESPONSE_TIMEOUT_SECONDS", "120")
+  )
+  seconds <- suppressWarnings(as.numeric(seconds))
+
+  if (length(seconds)) {
+    seconds <- seconds[[1]]
+  }
+
+  if (!length(seconds) || is.na(seconds) || seconds <= 0) {
+    seconds <- 120
+  }
+
+  as.integer(ceiling(seconds * 1000))
+}
+
+format_timeout <- function(timeout) {
+  seconds <- timeout / 1000
+  if (identical(seconds, 1)) {
+    return("1 second")
+  }
+
+  sprintf("%s seconds", seconds)
+}
+
+format_jsonrpc_id <- function(response) {
+  if (is.null(response$id)) {
+    return("<missing>")
+  }
+
+  paste(response$id, collapse = ", ")
 }
 
 # This process will be launched by the MCP client, so stdout/stderr aren't
@@ -574,7 +696,7 @@ append_tool_fn <- function(data) {
         data$id,
         error = list(code = -32601, message = "Method not found")
       ),
-      class = "jsonrpc_error"
+      class = c("jsonrpc_error", "list")
     ))
   }
 
