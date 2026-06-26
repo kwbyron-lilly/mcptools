@@ -248,7 +248,7 @@ handle_http_request <- function(req) {
   } else {
     return(list(
       status = 405L,
-      headers = list("Allow" = "GET, POST"),
+      headers = list("Allow" = "POST"),
       body = "Method Not Allowed"
     ))
   }
@@ -367,12 +367,15 @@ handle_http_post <- function(req) {
 
 handle_http_get <- function(req) {
   list(
-    status = 200L,
-    headers = list("Content-Type" = "text/plain"),
+    status = 405L,
+    headers = list(
+      "Allow" = "POST",
+      "Content-Type" = "text/plain"
+    ),
     body = paste(
-      "mcptools MCP server is running.",
+      "mcptools MCP endpoint is running.",
       "",
-      "Use this URL from an MCP client that supports Streamable HTTP.",
+      "HTTP GET/SSE is not supported; use POST from an MCP Streamable HTTP client.",
       sep = "\n"
     )
   )

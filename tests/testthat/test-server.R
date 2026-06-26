@@ -80,6 +80,14 @@ test_that("check_not_interactive errors informatively", {
   expect_snapshot(error = TRUE, mcp_server())
 })
 
+test_that("HTTP GET reports unsupported SSE transport", {
+  res <- handle_http_request(list(REQUEST_METHOD = "GET"))
+
+  expect_equal(res$status, 405L)
+  expect_equal(res$headers$Allow, "POST")
+  expect_match(res$body, "HTTP GET/SSE is not supported", fixed = TRUE)
+})
+
 test_that("HTTP requests validate Connect shared secret when configured", {
   withr::local_options(plumber2.sharedSecret = "secret")
 
@@ -99,7 +107,7 @@ test_that("HTTP requests validate Connect shared secret when configured", {
       REQUEST_METHOD = "GET",
       HTTP_PLUMBER_SHARED_SECRET = "secret"
     ))$status,
-    200L
+    405L
   )
 })
 
@@ -118,7 +126,7 @@ test_that("HTTP shared secret ignores empty override", {
       REQUEST_METHOD = "GET",
       HTTP_PLUMBER_SHARED_SECRET = "secret"
     ))$status,
-    200L
+    405L
   )
 })
 
@@ -140,7 +148,7 @@ test_that("HTTP shared secret uses non-empty mcptools override", {
       REQUEST_METHOD = "GET",
       HTTP_PLUMBER_SHARED_SECRET = "mcptools-secret"
     ))$status,
-    200L
+    405L
   )
 })
 
@@ -163,7 +171,7 @@ test_that("HTTP requests validate configured trusted hosts", {
       REQUEST_METHOD = "GET",
       HTTP_HOST = "127.0.0.1:1234"
     ))$status,
-    200L
+    405L
   )
 })
 
@@ -175,14 +183,14 @@ test_that("HTTP requests validate configured origins", {
       REQUEST_METHOD = "GET",
       HTTP_ORIGIN = "http://localhost:3000"
     ))$status,
-    200L
+    405L
   )
   expect_equal(
     handle_http_request(list(
       REQUEST_METHOD = "GET",
       HTTP_ORIGIN = "https://connect.example.com"
     ))$status,
-    200L
+    405L
   )
   expect_equal(
     handle_http_request(list(
