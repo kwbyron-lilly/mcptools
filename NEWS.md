@@ -1,5 +1,11 @@
 # mcptools (development version)
 
+* `mcp_tools()` can now connect directly to remote Streamable HTTP MCP servers,
+  configured with `url` instead of `command`. Static `headers` are supported for
+  token auth, and full OAuth 2.1 (authorization-server discovery, Dynamic Client
+  Registration, PKCE, and automatic token refresh) is handled via httr2, which
+  also caches tokens across sessions (#88).
+
 * HTTP `mcp_server()` requests now honor the `MCP-Protocol-Version` header,
   return `400 Bad Request` for unsupported protocol versions, and avoid using
   protocol negotiation from one HTTP client to shape responses for another.
