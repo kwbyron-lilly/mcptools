@@ -128,6 +128,41 @@ test_that("as_tool_call_result handles ContentToolResult with image content", {
   expect_false(output$result$isError)
 })
 
+test_that("as_tool_call_result inlines remote image content", {
+  data <- list(id = 1)
+  result <- ellmer::content_image_url("https://example.com/img.png")
+
+  httr2::local_mocked_responses(list(
+    httr2::response(
+      status_code = 200,
+      headers = list("Content-Type" = "image/jpeg"),
+      body = as.raw(c(1, 2, 3))
+    )
+  ))
+
+  output <- as_tool_call_result(data, result)
+
+  expect_equal(output$result$content[[1]]$type, "image")
+  expect_equal(output$result$content[[1]]$mimeType, "image/jpeg")
+  expect_equal(
+    output$result$content[[1]]$data,
+    jsonlite::base64_enc(as.raw(c(1, 2, 3)))
+  )
+  expect_false(output$result$isError)
+})
+
+test_that("as_tool_call_result surfaces remote image fetch failures", {
+  data <- list(id = 1)
+  result <- ellmer::content_image_url("https://example.com/missing.png")
+
+  httr2::local_mocked_responses(list(httr2::response(status_code = 404)))
+
+  expect_error(
+    as_tool_call_result(data, result),
+    "Failed to fetch remote image content"
+  )
+})
+
 test_that("as_tool_call_result handles bare mixed content", {
   data <- list(id = 1)
   image <- ellmer::ContentImageInline(type = "image/png", data = "abc123")

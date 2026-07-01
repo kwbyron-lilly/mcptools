@@ -107,11 +107,51 @@ as_mcp_content_block <- function(result) {
     return(list(type = "image", data = result@data, mimeType = result@type))
   }
 
+  if (inherits(result, "ellmer::ContentImageRemote")) {
+    return(remote_image_as_mcp_content_block(result))
+  }
+
   if (inherits(result, "ellmer::ContentText")) {
     return(list(type = "text", text = result@text))
   }
 
   as_mcp_text_content(result)
+}
+
+# MCP image content blocks carry inlined base64 data, but a ContentImageRemote
+# holds only a URL. Fetch and encode it server-side so tools returning
+# `content_image_url()` transmit an image rather than degrading to text.
+remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
+  url <- result@url
+
+  resp <- tryCatch(
+    httr2::req_perform(httr2::req_timeout(httr2::request(url), 30)),
+    error = function(cnd) {
+      cli::cli_abort(
+        "Failed to fetch remote image content from {.url {url}}.",
+        parent = cnd,
+        call = call
+      )
+    }
+  )
+
+  body <- httr2::resp_body_raw(resp)
+  max_bytes <- 10L * 1024L^2
+  if (length(body) > max_bytes) {
+    cli::cli_abort(
+      c(
+        "Remote image content from {.url {url}} is too large to inline.",
+        i = "mcptools inlines remote images up to {max_bytes} bytes."
+      ),
+      call = call
+    )
+  }
+
+  list(
+    type = "image",
+    data = jsonlite::base64_enc(body),
+    mimeType = httr2::resp_content_type(resp) %||% "image/png"
+  )
 }
 
 as_mcp_text_content <- function(result) {
@@ -200,6 +240,7 @@ has_mcp_content <- function(result) {
 
 is_mcp_content <- function(result) {
   inherits(result, "ellmer::ContentImageInline") ||
+    inherits(result, "ellmer::ContentImageRemote") ||
     inherits(result, "ellmer::ContentText")
 }
 
