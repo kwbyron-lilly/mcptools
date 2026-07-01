@@ -255,8 +255,17 @@ test_that("OpenAI can inspect an MCP image tool result", {
     tool_file
   )
 
+  # Load the package cwd-independently: under `devtools::test()` mcptools is a
+  # dev package (load its source), under `R CMD check` it's installed.
+  pkg_path <- find.package("mcptools")
+  load_expr <- if (file.exists(file.path(pkg_path, "Meta", "package.rds"))) {
+    "library(mcptools)"
+  } else {
+    sprintf("pkgload::load_all(%s, quiet = TRUE)", shQuote(pkg_path))
+  }
   server_expr <- sprintf(
-    "pkgload::load_all('.', quiet = TRUE); mcptools::mcp_server(tools = %s, session_tools = FALSE)",
+    "%s; mcptools::mcp_server(tools = %s, session_tools = FALSE)",
+    load_expr,
     shQuote(tool_file)
   )
   config_file <- withr::local_tempfile(fileext = ".json")
@@ -308,8 +317,12 @@ test_that("mcp_tools() errors informatively when process exits", {
   config <- list(
     mcpServers = list(
       "test" = list(
-        command = "Rscript",
-        args = c("-e", "stop('intentional error')")
+        # Use the full Rscript path: under R CMD check a bare "Rscript" resolves
+        # to the `R_check_bin` shim, which refuses to run and writes to stdout,
+        # leaving stderr (and thus the reported error) empty. `--vanilla` keeps
+        # the child's stderr deterministic regardless of the user's `.Rprofile`.
+        command = rscript_binary(),
+        args = c("--vanilla", "-e", "stop('intentional error')")
       )
     )
   )
@@ -317,5 +330,9 @@ test_that("mcp_tools() errors informatively when process exits", {
   tmpfile <- withr::local_tempfile(fileext = ".json")
   jsonlite::write_json(config, tmpfile, auto_unbox = TRUE)
 
-  expect_snapshot(error = TRUE, mcp_tools(tmpfile))
+  expect_snapshot(
+    error = TRUE,
+    mcp_tools(tmpfile),
+    transform = function(x) gsub(rscript_binary(), "Rscript", x, fixed = TRUE)
+  )
 })
