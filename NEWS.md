@@ -78,7 +78,7 @@
 
 ## Client
 
-- Notably, `mcp_tools()` did not gain an implementation of the HTTP transport. Instead, we now recommend the [mcp-remote](https://www.npmjs.com/package/mcp-remote) tool for serving local MCP servers via the HTTP transport in the documentation.
+- Notably, `mcp_tools()` did not gain an implementation of the HTTP transport. Instead, we now recommend the `@npx mcp-remote` tool for serving local MCP servers via the HTTP transport in the documentation.
 
 * `mcp_tools()` now errors more informatively when an MCP server process exits unexpectedly (#82).
 
