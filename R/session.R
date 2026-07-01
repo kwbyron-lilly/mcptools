@@ -149,7 +149,7 @@ remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
 
   list(
     type = "image",
-    data = jsonlite::base64_enc(body),
+    data = gsub("\n", "", jsonlite::base64_enc(body), fixed = TRUE),
     mimeType = httr2::resp_content_type(resp) %||% "image/png"
   )
 }

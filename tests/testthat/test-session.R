@@ -132,11 +132,13 @@ test_that("as_tool_call_result inlines remote image content", {
   data <- list(id = 1)
   result <- ellmer::content_image_url("https://example.com/img.png")
 
+  # large enough that MIME-style base64 wrapping would insert newlines
+  body <- as.raw(rep(0:255, 4))
   httr2::local_mocked_responses(list(
     httr2::response(
       status_code = 200,
       headers = list("Content-Type" = "image/jpeg"),
-      body = as.raw(c(1, 2, 3))
+      body = body
     )
   ))
 
@@ -144,10 +146,8 @@ test_that("as_tool_call_result inlines remote image content", {
 
   expect_equal(output$result$content[[1]]$type, "image")
   expect_equal(output$result$content[[1]]$mimeType, "image/jpeg")
-  expect_equal(
-    output$result$content[[1]]$data,
-    jsonlite::base64_enc(as.raw(c(1, 2, 3)))
-  )
+  expect_false(grepl("\n", output$result$content[[1]]$data))
+  expect_equal(jsonlite::base64_dec(output$result$content[[1]]$data), body)
   expect_false(output$result$isError)
 })
 
