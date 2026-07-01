@@ -255,8 +255,14 @@ test_that("OpenAI can inspect an MCP image tool result", {
     tool_file
   )
 
+  load_expr <- if (pkgload::is_dev_package("mcptools")) {
+    sprintf("pkgload::load_all(%s, quiet = TRUE)", shQuote(pkgload::pkg_path()))
+  } else {
+    "library(mcptools)"
+  }
   server_expr <- sprintf(
-    "pkgload::load_all('.', quiet = TRUE); mcptools::mcp_server(tools = %s, session_tools = FALSE)",
+    "%s; mcptools::mcp_server(tools = %s, session_tools = FALSE)",
+    load_expr,
     shQuote(tool_file)
   )
   config_file <- withr::local_tempfile(fileext = ".json")

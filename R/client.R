@@ -798,6 +798,9 @@ mcp_inherited_env <- function() {
 }
 
 mcp_process_error_lines <- function(process) {
+  # Ensure the process has finished before draining stderr; otherwise buffered
+  # error output can be missed and reported back as an empty message.
+  process$wait(timeout = 2000)
   lines <- process$read_all_error_lines()
   lines[!grepl("^Ran [0-9]+/[0-9]+ deferred expressions$", lines)]
 }
