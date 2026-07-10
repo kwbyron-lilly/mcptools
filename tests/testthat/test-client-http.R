@@ -53,9 +53,22 @@ test_that("HTTP config rejects Authorization header alongside OAuth", {
   )
 })
 
+test_that("an Authorization header without an oauth block builds and disables OAuth", {
+  transport <- mcp_transport_http(list(
+    url = "https://example.test/mcp",
+    headers = list(Authorization = "Key secret")
+  ))
+
+  expect_equal(transport$headers[["Authorization"]], "Key secret")
+  expect_false(mcp_oauth_active(transport))
+})
+
 test_that("credentialed public HTTP endpoints require explicit opt-out", {
-  transport <- mcp_transport_http(list(url = "http://example.test/mcp"))
-  expect_false(transport$allow_http)
+  # a bare http url is credentialed now that OAuth auto-engages on a 401
+  expect_error(
+    mcp_transport_http(list(url = "http://example.test/mcp")),
+    "Credentialed remote MCP endpoints"
+  )
 
   transport <- mcp_transport_http(list(
     url = "http://127.0.0.1:8080/mcp",
