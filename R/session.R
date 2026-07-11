@@ -148,9 +148,12 @@ as_mcp_content_block <- function(result) {
 # `content_image_url()` transmit an image rather than degrading to text.
 remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
   url <- result@url
+  validate_remote_image_url(url, call = call)
 
   resp <- tryCatch(
-    httr2::req_perform(httr2::req_timeout(httr2::request(url), 30)),
+    httr2::req_perform(
+      mcp_req_no_redirects(httr2::req_timeout(httr2::request(url), 30))
+    ),
     error = function(cnd) {
       cli::cli_abort(
         "Failed to fetch remote image content from {.url {url}}.",
@@ -159,6 +162,16 @@ remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
       )
     }
   )
+
+  if (httr2::resp_status(resp) >= 300L) {
+    cli::cli_abort(
+      c(
+        "Failed to fetch remote image content from {.url {url}}.",
+        i = "The server responded with a redirect, which mcptools does not follow."
+      ),
+      call = call
+    )
+  }
 
   body <- httr2::resp_body_raw(resp)
   max_bytes <- 10L * 1024L^2
@@ -177,6 +190,36 @@ remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
     data = gsub("\n", "", jsonlite::base64_enc(body), fixed = TRUE),
     mimeType = httr2::resp_content_type(resp) %||% "image/png"
   )
+}
+
+# A remote MCP deployment can steer this server-side fetch through a tool
+# argument, so restrict it to http(s) and refuse private/loopback IP literals
+# (cloud metadata, RFC 1918 hosts, `file://`). Redirects are disabled at the
+# request so a public URL cannot bounce the fetch toward an internal address.
+validate_remote_image_url <- function(url, call = caller_env()) {
+  parsed <- url_parse_or_null(url)
+  scheme <- tolower(parsed$scheme %||% "")
+  if (!scheme %in% c("http", "https")) {
+    cli::cli_abort(
+      c(
+        "Remote image content must be fetched over http or https.",
+        i = "Refusing to fetch {.url {url}}."
+      ),
+      call = call
+    )
+  }
+
+  if (is_private_host_literal(parsed$hostname %||% "")) {
+    cli::cli_abort(
+      c(
+        "Remote image content must not reference a private or loopback address.",
+        i = "Refusing to fetch {.url {url}}."
+      ),
+      call = call
+    )
+  }
+
+  invisible(url)
 }
 
 as_mcp_text_content <- function(result) {

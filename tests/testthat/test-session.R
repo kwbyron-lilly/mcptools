@@ -163,6 +163,49 @@ test_that("as_tool_call_result surfaces remote image fetch failures", {
   )
 })
 
+test_that("as_tool_call_result refuses non-http remote image schemes", {
+  data <- list(id = 1)
+  result <- ellmer::content_image_url("file:///etc/passwd")
+
+  expect_error(
+    as_tool_call_result(data, result),
+    "must be fetched over http or https"
+  )
+})
+
+test_that("as_tool_call_result refuses remote images at private addresses", {
+  data <- list(id = 1)
+
+  for (url in c(
+    "http://169.254.169.254/latest/meta-data/",
+    "http://127.0.0.1/img.png",
+    "http://10.0.0.5/img.png",
+    "http://[::1]/img.png"
+  )) {
+    expect_error(
+      as_tool_call_result(data, ellmer::content_image_url(url)),
+      "must not reference a private or loopback address"
+    )
+  }
+})
+
+test_that("as_tool_call_result does not follow remote image redirects", {
+  data <- list(id = 1)
+  result <- ellmer::content_image_url("https://example.com/img.png")
+
+  httr2::local_mocked_responses(list(
+    httr2::response(
+      status_code = 302,
+      headers = list(Location = "http://169.254.169.254/")
+    )
+  ))
+
+  expect_error(
+    as_tool_call_result(data, result),
+    "does not follow"
+  )
+})
+
 test_that("as_tool_call_result handles bare mixed content", {
   data <- list(id = 1)
   image <- ellmer::ContentImageInline(type = "image/png", data = "abc123")
