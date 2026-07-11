@@ -207,17 +207,32 @@ probe_sessions <- function() {
   pipes <- nanonext::read_monitor(monitor)
   res <- lapply(
     pipes,
-    function(x) nanonext::recv_aio(sock, mode = "string", timeout = 5000L)
+    function(x) nanonext::recv_aio(sock, mode = "raw", timeout = 5000L)
   )
   lapply(
     pipes,
-    function(x) nanonext::send_aio(sock, character(), mode = "serial", pipe = x)
+    function(x) {
+      nanonext::send_aio(
+        sock,
+        mac_seal(serialize(character(), NULL)),
+        mode = "raw",
+        pipe = x
+      )
+    }
   )
   results <- nanonext::collect_aio_(res)
 
-  # a timed-out probe surfaces as an integer error code, not a session string
-  replies <- Filter(is.character, results)
+  replies <- Filter(Negate(is.null), lapply(results, open_reply))
   list(live = live, sessions = lapply(replies, parse_session_reply))
+}
+
+# A timed-out probe surfaces as an error code rather than sealed reply bytes.
+open_reply <- function(result) {
+  payload <- if (is.raw(result)) mac_open(result) else NULL
+  if (is.null(payload)) {
+    return(NULL)
+  }
+  rawToChar(payload)
 }
 
 parse_session_reply <- function(reply) {

@@ -366,6 +366,7 @@ test_that("forward_request times out when session does not respond", {
     the$server_tools <- old_server_tools
   })
 
+  local_socket_secret()
   test_tool <- ellmer::tool(function() "ok", "Test tool", name = "test_tool")
   set_server_tools(list(test_tool), session_tools = FALSE)
   testthat::local_mocked_bindings(session_response_timeout = function() 10L)
@@ -403,6 +404,7 @@ test_that("forward_request ignores stale responses", {
     the$server_tools <- old_server_tools
   })
 
+  local_socket_secret()
   test_tool <- ellmer::tool(function() "ok", "Test tool", name = "test_tool")
   set_server_tools(list(test_tool), session_tools = FALSE)
   testthat::local_mocked_bindings(session_response_timeout = function() 20L)
@@ -422,7 +424,9 @@ test_that("forward_request ignores stale responses", {
   expect_identical(
     nanonext::send(
       session_socket,
-      to_json(jsonrpc_response(99, result = list(ok = TRUE))),
+      mac_seal(charToRaw(as.character(
+        to_json(jsonrpc_response(99, result = list(ok = TRUE)))
+      ))),
       mode = "raw"
     ),
     0L
@@ -449,6 +453,7 @@ test_that("receive_forwarded_response errors for non-object JSON", {
     the$server_tools <- old_server_tools
   })
 
+  local_socket_secret()
   the$socket_url <- local_inproc_url()
   session_socket <- nanonext::socket("poly")
   withr::defer(nanonext::reap(session_socket))
@@ -461,7 +466,14 @@ test_that("receive_forwarded_response errors for non-object JSON", {
     0L
   )
 
-  expect_identical(nanonext::send(session_socket, "\"oops\"", mode = "raw"), 0L)
+  expect_identical(
+    nanonext::send(
+      session_socket,
+      mac_seal(charToRaw("\"oops\"")),
+      mode = "raw"
+    ),
+    0L
+  )
 
   res <- receive_forwarded_response(1, 10L)
 

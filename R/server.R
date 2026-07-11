@@ -577,8 +577,8 @@ forward_request <- function(data) {
   timeout <- session_response_timeout()
   send_result <- nanonext::send(
     the$server_socket,
-    prepared,
-    mode = "serial",
+    mac_seal(serialize(prepared, NULL)),
+    mode = "raw",
     block = timeout
   )
 
@@ -598,11 +598,11 @@ receive_forwarded_response <- function(id, timeout) {
   repeat {
     response_raw <- nanonext::recv(
       the$server_socket,
-      mode = "character",
+      mode = "raw",
       block = remaining_timeout(deadline)
     )
 
-    if (!is.character(response_raw) || nanonext::is_error_value(response_raw)) {
+    if (!is.raw(response_raw) || nanonext::is_error_value(response_raw)) {
       return(session_forwarding_error(
         id,
         sprintf(
@@ -612,8 +612,14 @@ receive_forwarded_response <- function(id, timeout) {
       ))
     }
 
+    payload <- mac_open(response_raw)
+    if (is.null(payload)) {
+      logcat("Ignoring unauthenticated forwarded response")
+      next
+    }
+
     response <- tryCatch(
-      jsonlite::parse_json(response_raw),
+      jsonlite::parse_json(rawToChar(payload)),
       error = function(err) {
         session_forwarding_error(
           id,
@@ -647,15 +653,15 @@ drain_stale_forwarded_responses <- function() {
   repeat {
     response_raw <- nanonext::recv(
       the$server_socket,
-      mode = "character",
+      mode = "raw",
       block = FALSE
     )
 
-    if (!is.character(response_raw) || nanonext::is_error_value(response_raw)) {
+    if (!is.raw(response_raw) || nanonext::is_error_value(response_raw)) {
       return(invisible())
     }
 
-    logcat(c("Ignoring queued stale forwarded response: ", response_raw))
+    logcat("Ignoring queued stale forwarded response")
   }
 }
 

@@ -10,6 +10,13 @@ rscript_binary <- function() {
   file.path(R.home("bin"), "Rscript")
 }
 
+local_socket_secret <- function(secret = "test-secret", env = parent.frame()) {
+  old <- the$socket_secret
+  withr::defer(the$socket_secret <- old, envir = env)
+  the$socket_secret <- secret
+  invisible(secret)
+}
+
 local_protocol_version <- function(
   protocol_version = the$protocol_version,
   env = parent.frame()

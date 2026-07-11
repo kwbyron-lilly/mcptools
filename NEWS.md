@@ -19,6 +19,10 @@
   `XDG_RUNTIME_DIR/mcptools/` > `$TMPDIR/mcptools-<user>/` >
   `/tmp/mcptools-<user>/`. Reported and prototyped by @kwbyron-lilly (#114).
 
+* The session and server now authenticate every IPC message with a per-user
+  secret stored alongside the sockets, so a session acts only on tool calls from
+  the paired server and the server accepts only responses from a genuine session.
+
 * Socket files left behind by a crashed session are now reclaimed automatically:
   the next session that needs the slot detects the dead file and reuses it.
 

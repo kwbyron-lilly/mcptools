@@ -2,6 +2,7 @@
 #' @export
 mcp_session <- function() {
   ensure_socket_dir(socket_dir_in_use())
+  socket_secret()
 
   the$session_socket <- nanonext::socket("poly")
   i <- 1L
@@ -38,22 +39,24 @@ mcp_session <- function() {
   invisible(the$session_socket)
 }
 
-handle_message_from_server <- function(data) {
+handle_message_from_server <- function(wire) {
   pipe <- nanonext::pipe_id(the$raio)
   schedule_handle_message_from_server()
 
+  payload <- mac_open(wire)
+  if (is.null(payload)) {
+    return(invisible())
+  }
+  data <- unserialize(payload)
+
   if (length(data) == 0) {
-    return(
-      nanonext::send_aio(
-        the$session_socket,
-        session_metadata(),
-        mode = "raw",
-        pipe = pipe
-      )
-    )
+    return(session_send(session_metadata(), pipe))
   }
 
-  if (data$method == "tools/call") {
+  err <- validate_session_message(data)
+  if (!is.null(err)) {
+    body <- err
+  } else if (data$method == "tools/call") {
     body <- execute_tool_call(data)
   } else {
     body <- jsonrpc_response(
@@ -61,11 +64,14 @@ handle_message_from_server <- function(data) {
       error = list(code = -32601, message = "Method not found")
     )
   }
-  # cat("SEND:", to_json(body), "\n", sep = "", file = stderr())
 
+  session_send(to_json(body), pipe)
+}
+
+session_send <- function(text, pipe) {
   nanonext::send_aio(
     the$session_socket,
-    to_json(body),
+    mac_seal(charToRaw(as.character(text))),
     mode = "raw",
     pipe = pipe
   )
@@ -264,7 +270,7 @@ is_mcp_content <- function(result) {
 }
 
 schedule_handle_message_from_server <- function() {
-  the$raio <- nanonext::recv_aio(the$session_socket, mode = "serial")
+  the$raio <- nanonext::recv_aio(the$session_socket, mode = "raw")
   promises::as.promise(the$raio)$then(handle_message_from_server)$catch(
     log_session_error
   )
