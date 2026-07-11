@@ -1,19 +1,38 @@
 #' @rdname server
 #' @export
 mcp_session <- function() {
+  ensure_socket_dir(socket_dir_in_use())
+
   the$session_socket <- nanonext::socket("poly")
   i <- 1L
   while (i < 1024L) {
     # prevent indefinite loop
-    nanonext::listen(
-      the$session_socket,
-      url = sprintf("%s%d", the$socket_url, i),
-      fail = "none"
-    ) ||
+    url <- sprintf("%s%d", the$socket_url, i)
+    if (!nanonext::is_error_value(
+      nanonext::listen(the$session_socket, url = url, fail = "none")
+    )) {
       break
+    }
+    if (
+      reclaim_stale_socket(url) &&
+        !nanonext::is_error_value(
+          nanonext::listen(the$session_socket, url = url, fail = "none")
+        )
+    ) {
+      break
+    }
     i <- i + 1L
   }
   the$session <- i
+
+  # Register once for exit cleanup -- filesystem sockets persist, unlike
+  # abstract sockets which the kernel cleans automatically. Guard against
+  # repeat mcp_session() calls stacking duplicate finalizers on `the`.
+  if (!isTRUE(the$finalizer_registered)) {
+    reg.finalizer(the, function(e) cleanup_session_socket(), onexit = TRUE)
+    the$finalizer_registered <- TRUE
+  }
+
   schedule_handle_message_from_server()
 
   invisible(the$session_socket)
@@ -27,7 +46,7 @@ handle_message_from_server <- function(data) {
     return(
       nanonext::send_aio(
         the$session_socket,
-        describe_session(),
+        session_metadata(),
         mode = "raw",
         pipe = pipe
       )
@@ -267,6 +286,18 @@ drop_nulls <- function(x) {
     keep_id <- names(x) == "id"
   }
   x[!is_null | keep_id]
+}
+
+# Structured reply to a discovery probe: `wd` lets the server match a session
+# to its own working directory when auto-connecting (see
+# ensure_session_connection()). Older servers show this JSON string verbatim
+# in list_r_sessions() output; newer ones extract `description`.
+session_metadata <- function() {
+  as.character(to_json(list(
+    session = the$session,
+    wd = getwd(),
+    description = describe_session()
+  )))
 }
 
 # Enough information for the user to be able to identify which
