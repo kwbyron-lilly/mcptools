@@ -446,6 +446,11 @@ handle_http_request_message <- function(
     ))
   } else if (data$method == "tools/call") {
     data$protocolVersion <- protocol_version
+    # Mark the call as network-facing so server-side URL fetches (e.g. inlining a
+    # tool's `content_image_url()`) refuse internal addresses; the flag rides the
+    # message to whichever process runs the tool. Set server-side, so a client
+    # cannot clear it. stdio leaves it unset (fetches its own machine freely).
+    data$restrictFetch <- TRUE
     tool_name <- data$params$name
     if (
       !the$sessions_enabled ||

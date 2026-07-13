@@ -173,8 +173,8 @@ test_that("as_tool_call_result refuses non-http remote image schemes", {
   )
 })
 
-test_that("as_tool_call_result refuses remote images at private addresses", {
-  data <- list(id = 1)
+test_that("as_tool_call_result refuses remote images at private addresses when network-facing", {
+  data <- list(id = 1, restrictFetch = TRUE)
 
   for (url in c(
     "http://169.254.169.254/latest/meta-data/",
@@ -189,8 +189,54 @@ test_that("as_tool_call_result refuses remote images at private addresses", {
   }
 })
 
-test_that("as_tool_call_result does not follow remote image redirects", {
+test_that("as_tool_call_result inlines private-address images for local (stdio) use", {
   data <- list(id = 1)
+  result <- ellmer::content_image_url("http://127.0.0.1/img.png")
+
+  body <- as.raw(0:255)
+  httr2::local_mocked_responses(list(
+    httr2::response(
+      status_code = 200,
+      headers = list("Content-Type" = "image/png"),
+      body = body
+    )
+  ))
+
+  output <- as_tool_call_result(data, result)
+
+  expect_equal(output$result$content[[1]]$type, "image")
+  expect_equal(jsonlite::base64_dec(output$result$content[[1]]$data), body)
+  expect_false(output$result$isError)
+})
+
+test_that("as_tool_call_result follows remote image redirects to public targets", {
+  data <- list(id = 1)
+  result <- ellmer::content_image_url("https://example.com/img.png")
+
+  body <- as.raw(0:255)
+  httr2::local_mocked_responses(function(req) {
+    if (grepl("cdn", req$url, fixed = TRUE)) {
+      return(httr2::response(
+        status_code = 200,
+        headers = list("Content-Type" = "image/png"),
+        body = body
+      ))
+    }
+    httr2::response(
+      status_code = 302,
+      headers = list(Location = "https://cdn.example.com/img.png")
+    )
+  })
+
+  output <- as_tool_call_result(data, result)
+
+  expect_equal(output$result$content[[1]]$type, "image")
+  expect_equal(jsonlite::base64_dec(output$result$content[[1]]$data), body)
+  expect_false(output$result$isError)
+})
+
+test_that("as_tool_call_result validates each remote image redirect hop when network-facing", {
+  data <- list(id = 1, restrictFetch = TRUE)
   result <- ellmer::content_image_url("https://example.com/img.png")
 
   httr2::local_mocked_responses(list(
@@ -202,7 +248,24 @@ test_that("as_tool_call_result does not follow remote image redirects", {
 
   expect_error(
     as_tool_call_result(data, result),
-    "does not follow"
+    "must not reference a private or loopback address"
+  )
+})
+
+test_that("as_tool_call_result errors when remote image redirects exceed the limit", {
+  data <- list(id = 1)
+  result <- ellmer::content_image_url("https://example.com/img.png")
+
+  httr2::local_mocked_responses(function(req) {
+    httr2::response(
+      status_code = 302,
+      headers = list(Location = "https://example.com/img.png")
+    )
+  })
+
+  expect_error(
+    as_tool_call_result(data, result),
+    "redirect limit"
   )
 })
 

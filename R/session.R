@@ -92,14 +92,18 @@ as_tool_call_result <- function(data, result) {
   jsonrpc_response(
     data$id,
     drop_nulls(list(
-      content = as_mcp_content(result, structured_content),
+      content = as_mcp_content(
+        result,
+        structured_content,
+        restrict_private = isTRUE(data$restrictFetch)
+      ),
       structuredContent = structured_content,
       isError = is_error
     ))
   )
 }
 
-as_mcp_content <- function(result, structured_content = NULL) {
+as_mcp_content <- function(result, structured_content = NULL, restrict_private = FALSE) {
   if (!is.null(structured_content)) {
     return(list(list(
       type = "text",
@@ -110,30 +114,33 @@ as_mcp_content <- function(result, structured_content = NULL) {
   if (inherits(result, "ellmer::ContentToolResult")) {
     value <- result@value
     if (has_mcp_content(value)) {
-      return(as_mcp_content(value))
+      return(as_mcp_content(value, restrict_private = restrict_private))
     }
 
     return(list(as_mcp_text_content(result)))
   }
 
   if (is_mcp_content(result)) {
-    return(list(as_mcp_content_block(result)))
+    return(list(as_mcp_content_block(result, restrict_private = restrict_private)))
   }
 
   if (is.list(result) && has_mcp_content(result)) {
-    return(unname(unlist(lapply(result, as_mcp_content), recursive = FALSE)))
+    return(unname(unlist(
+      lapply(result, as_mcp_content, restrict_private = restrict_private),
+      recursive = FALSE
+    )))
   }
 
   list(as_mcp_text_content(result))
 }
 
-as_mcp_content_block <- function(result) {
+as_mcp_content_block <- function(result, restrict_private = FALSE) {
   if (inherits(result, "ellmer::ContentImageInline")) {
     return(list(type = "image", data = result@data, mimeType = result@type))
   }
 
   if (inherits(result, "ellmer::ContentImageRemote")) {
-    return(remote_image_as_mcp_content_block(result))
+    return(remote_image_as_mcp_content_block(result, restrict_private = restrict_private))
   }
 
   if (inherits(result, "ellmer::ContentText")) {
@@ -146,32 +153,9 @@ as_mcp_content_block <- function(result) {
 # MCP image content blocks carry inlined base64 data, but a ContentImageRemote
 # holds only a URL. Fetch and encode it server-side so tools returning
 # `content_image_url()` transmit an image rather than degrading to text.
-remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
+remote_image_as_mcp_content_block <- function(result, restrict_private = FALSE, call = caller_env()) {
   url <- result@url
-  validate_remote_image_url(url, call = call)
-
-  resp <- tryCatch(
-    httr2::req_perform(
-      mcp_req_no_redirects(httr2::req_timeout(httr2::request(url), 30))
-    ),
-    error = function(cnd) {
-      cli::cli_abort(
-        "Failed to fetch remote image content from {.url {url}}.",
-        parent = cnd,
-        call = call
-      )
-    }
-  )
-
-  if (httr2::resp_status(resp) >= 300L) {
-    cli::cli_abort(
-      c(
-        "Failed to fetch remote image content from {.url {url}}.",
-        i = "The server responded with a redirect, which mcptools does not follow."
-      ),
-      call = call
-    )
-  }
+  resp <- fetch_remote_image(url, restrict_private = restrict_private, call = call)
 
   body <- httr2::resp_body_raw(resp)
   max_bytes <- 10L * 1024L^2
@@ -192,11 +176,62 @@ remote_image_as_mcp_content_block <- function(result, call = caller_env()) {
   )
 }
 
-# A remote MCP deployment can steer this server-side fetch through a tool
-# argument, so restrict it to http(s) and refuse private/loopback IP literals
-# (cloud metadata, RFC 1918 hosts, `file://`). Redirects are disabled at the
-# request so a public URL cannot bounce the fetch toward an internal address.
-validate_remote_image_url <- function(url, call = caller_env()) {
+# Follow redirects ourselves, validating each hop before requesting it: curl's
+# own redirect following would let a public URL bounce the fetch to an internal
+# address past validate_remote_image_url(). `restrict_private` is set only for
+# network-facing (HTTP) deployments, where a remote client can steer the URL
+# through a tool argument; local stdio use fetches its own machine freely.
+fetch_remote_image <- function(url, restrict_private = FALSE, call = caller_env()) {
+  max_redirects <- 5L
+
+  for (i in seq_len(max_redirects + 1L)) {
+    validate_remote_image_url(url, restrict_private = restrict_private, call = call)
+
+    resp <- tryCatch(
+      httr2::req_perform(
+        mcp_req_no_redirects(httr2::req_timeout(httr2::request(url), 30))
+      ),
+      error = function(cnd) {
+        cli::cli_abort(
+          "Failed to fetch remote image content from {.url {url}}.",
+          parent = cnd,
+          call = call
+        )
+      }
+    )
+
+    if (httr2::resp_status(resp) < 300L) {
+      return(resp)
+    }
+
+    location <- httr2::resp_header(resp, "location")
+    if (is.null(location)) {
+      cli::cli_abort(
+        c(
+          "Failed to fetch remote image content from {.url {url}}.",
+          i = "The server responded with a redirect but no {.field Location}."
+        ),
+        call = call
+      )
+    }
+
+    url <- httr2::url_modify_relative(url, location)
+  }
+
+  cli::cli_abort(
+    c(
+      "Failed to fetch remote image content.",
+      i = "Exceeded the {max_redirects}-redirect limit."
+    ),
+    call = call
+  )
+}
+
+# Refuse fetches that could reach the local filesystem (non-http schemes) or, in
+# a network-facing deployment, internal services (private/loopback/link-local IP
+# literals such as cloud metadata or RFC 1918 hosts). Applied to every redirect
+# hop, not just the initial URL.
+validate_remote_image_url <- function(url, restrict_private = FALSE, call = caller_env()) {
   parsed <- url_parse_or_null(url)
   scheme <- tolower(parsed$scheme %||% "")
   if (!scheme %in% c("http", "https")) {
@@ -209,7 +244,7 @@ validate_remote_image_url <- function(url, call = caller_env()) {
     )
   }
 
-  if (is_private_host_literal(parsed$hostname %||% "")) {
+  if (restrict_private && is_private_host_literal(parsed$hostname %||% "")) {
     cli::cli_abort(
       c(
         "Remote image content must not reference a private or loopback address.",

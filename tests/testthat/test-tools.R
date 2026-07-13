@@ -214,6 +214,36 @@ test_that("tools/list gates top-level title on negotiated protocol version", {
   expect_equal(tool$annotations$title, "Read Project")
 })
 
+test_that("handle_http_request_message marks tools/call as network-facing", {
+  old_server_tools <- the$server_tools
+  old_sessions_enabled <- the$sessions_enabled
+  withr::defer({
+    the$server_tools <- old_server_tools
+    the$sessions_enabled <- old_sessions_enabled
+  })
+  the$sessions_enabled <- FALSE
+
+  image_tool <- ellmer::tool(
+    function() {
+      ellmer::content_image_url("http://169.254.169.254/latest/meta-data/")
+    },
+    "Returns a remote image",
+    name = "remote_image"
+  )
+  set_server_tools(list(image_tool), session_tools = FALSE)
+
+  res <- handle_http_request_message(list(
+    id = 1,
+    method = "tools/call",
+    params = list(name = "remote_image", arguments = list())
+  ))
+
+  expect_match(
+    res$error$message,
+    "must not reference a private or loopback address"
+  )
+})
+
 test_that("list_r_sessions() filters out integer error codes", {
   local_socket_secret()
   local_mocked_bindings(
