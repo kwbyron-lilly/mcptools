@@ -64,37 +64,70 @@ test_that("authorization server selection errors on ambiguity without override",
   )
 })
 
-test_that("authorization server metadata tries OAuth before OpenID", {
-  types <- character()
-  local_mocked_bindings(
-    oauth_server_metadata = function(issuer, type) {
-      types <<- c(types, type)
-      if (identical(type, "oauth")) {
-        cli::cli_abort("no oauth-authorization-server document")
-      }
-      list(issuer = issuer)
-    },
-    .package = "httr2"
-  )
+test_that("authorization server metadata tries OAuth before OpenID without following redirects", {
+  requested <- character()
+  httr2::local_mocked_responses(function(req) {
+    requested <<- c(requested, req$url)
+    expect_false(isTRUE(req$options$followlocation))
+    if (grepl("oauth-authorization-server", req$url, fixed = TRUE)) {
+      return(httr2::response(status_code = 404L, url = req$url))
+    }
+    httr2::response(
+      status_code = 200L,
+      url = req$url,
+      headers = list("Content-Type" = "application/json"),
+      body = charToRaw(to_json(list(issuer = "https://auth.test")))
+    )
+  })
 
   metadata <- mcp_oauth_server_metadata("https://auth.test")
   expect_equal(metadata$issuer, "https://auth.test")
-  expect_equal(types, c("oauth", "openid"))
+  expect_match(requested[[1]], "oauth-authorization-server")
+  expect_match(requested[[2]], "openid-configuration")
 })
 
 test_that("authorization server metadata prefers the OAuth document", {
-  types <- character()
-  local_mocked_bindings(
-    oauth_server_metadata = function(issuer, type) {
-      types <<- c(types, type)
-      list(issuer = issuer, type = type)
-    },
-    .package = "httr2"
-  )
+  requested <- character()
+  httr2::local_mocked_responses(function(req) {
+    requested <<- c(requested, req$url)
+    httr2::response(
+      status_code = 200L,
+      url = req$url,
+      headers = list("Content-Type" = "application/json"),
+      body = charToRaw(to_json(list(issuer = "https://auth.test", type = "oauth")))
+    )
+  })
 
   metadata <- mcp_oauth_server_metadata("https://auth.test")
   expect_equal(metadata$type, "oauth")
-  expect_equal(types, "oauth")
+  expect_length(requested, 1L)
+  expect_match(requested[[1]], "oauth-authorization-server")
+})
+
+test_that("a single advertised issuer is selected, including cross-origin", {
+  expect_equal(
+    mcp_select_authorization_server(
+      list(authorization_servers = list("https://auth.vendor.example"))
+    ),
+    "https://auth.vendor.example"
+  )
+})
+
+test_that("an advertised issuer must not point at a private address", {
+  expect_silent(mcp_validate_oauth_issuer("https://auth.vendor.example"))
+  expect_silent(mcp_validate_oauth_issuer("http://127.0.0.1:9000"))
+  expect_silent(mcp_validate_oauth_issuer("http://localhost:9000"))
+
+  expect_error(
+    mcp_validate_oauth_issuer("http://169.254.169.254"),
+    "private address"
+  )
+  expect_error(
+    mcp_validate_oauth_issuer("https://10.0.0.5"),
+    "private address"
+  )
+
+  expect_silent(mcp_validate_oauth_issuer("http://10.0.0.5", allow_http = TRUE))
 })
 
 test_that("PKCE S256 support is required", {
@@ -399,7 +432,6 @@ test_that("mcp_transport_http_send retries once after a 401 and succeeds", {
     httr2::response(
       status_code = 200L,
       url = req$url,
-      method = req$method,
       headers = list("Content-Type" = "application/json"),
       body = charToRaw(to_json(jsonrpc_response(req$body$data$id, result = named_list())))
     )
@@ -417,7 +449,6 @@ test_that("an unrecoverable 401 raises an auth-required condition", {
     httr2::response(
       status_code = 401L,
       url = req$url,
-      method = req$method,
       headers = list("WWW-Authenticate" = 'Bearer error="invalid_token"')
     )
   })

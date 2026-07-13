@@ -105,6 +105,28 @@ is_private_host_literal <- function(host) {
   FALSE
 }
 
+is_loopback_host_literal <- function(host) {
+  host <- tolower(host %||% "")
+  if (!nzchar(host)) {
+    return(FALSE)
+  }
+
+  if (identical(host, "localhost") || endsWith(host, ".localhost")) {
+    return(TRUE)
+  }
+
+  if (startsWith(host, "[") && endsWith(host, "]")) {
+    host <- substr(host, 2L, nchar(host) - 1L)
+  }
+
+  if (grepl(":", host, fixed = TRUE)) {
+    return(host %in% c("::1", "0:0:0:0:0:0:0:1"))
+  }
+
+  octets <- ipv4_literal_octets(host)
+  !is.null(octets) && octets[[1]] == 127L
+}
+
 ipv4_literal_octets <- function(host) {
   if (!grepl("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", host)) {
     return(NULL)

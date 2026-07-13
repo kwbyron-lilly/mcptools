@@ -132,6 +132,18 @@ test_that("is_private_host_literal flags loopback, private, and link-local hosts
   }
 })
 
+test_that("is_loopback_host_literal flags only genuine loopback literals", {
+  loopback <- c("localhost", "app.localhost", "127.0.0.1", "127.1.2.3", "::1", "[::1]")
+  for (host in loopback) {
+    expect_true(is_loopback_host_literal(host), info = host)
+  }
+
+  not_loopback <- c("127.evil.example.com", "10.0.0.5", "169.254.169.254", "example.com")
+  for (host in not_loopback) {
+    expect_false(is_loopback_host_literal(host), info = host)
+  }
+})
+
 test_that("mcptools_server_log works", {
   # mcptools_server_log returns environment variable when set
   withr::local_envvar(MCPTOOLS_SERVER_LOG = "/custom/log/file.txt")

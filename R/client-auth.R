@@ -135,16 +135,20 @@ mcp_oauth_discover <- function(transport, challenge = named_list(), call = calle
   )
   transport$oauth_prm <- prm
 
-  issuer <- mcp_select_authorization_server(
-    prm,
-    override = transport$oauth$authorization_server,
-    call = call
-  )
+  override <- transport$oauth$authorization_server
+  issuer <- mcp_select_authorization_server(prm, override = override, call = call)
   if (is.null(issuer)) {
     return(NULL)
   }
+  if (is.null(override)) {
+    mcp_validate_oauth_issuer(
+      issuer,
+      allow_http = isTRUE(transport$allow_http),
+      call = call
+    )
+  }
 
-  metadata <- mcp_oauth_server_metadata(issuer)
+  metadata <- mcp_oauth_server_metadata(issuer, timeout = transport$timeout)
   if (is.null(metadata)) {
     cli::cli_abort(
       c(
@@ -222,18 +226,35 @@ mcp_validate_oauth_endpoint <- function(url, field, allow_http = FALSE, call = c
 # The MCP authorization spec requires trying OAuth 2.0 authorization-server
 # metadata (RFC 8414) before OpenID Connect discovery; httr2 defaults to the
 # OpenID endpoint, so OAuth-only servers fail unless we attempt both.
-mcp_oauth_server_metadata <- function(issuer) {
+mcp_oauth_server_metadata <- function(issuer, timeout = NULL) {
   for (type in c("oauth", "openid")) {
+    req <- mcp_metadata_get_request(mcp_oauth_metadata_url(issuer, type), timeout = timeout)
+    resp <- tryCatch(httr2::req_perform(req), error = function(err) NULL)
+    if (is.null(resp) || !identical(httr2::resp_status(resp), 200L)) {
+      next
+    }
+
     metadata <- tryCatch(
-      httr2::oauth_server_metadata(issuer, type = type),
+      httr2::resp_body_json(resp, simplifyVector = FALSE),
       error = function(err) NULL
     )
-    if (!is.null(metadata)) {
+    if (!is.null(metadata) && identical(metadata$issuer, issuer)) {
       return(metadata)
     }
   }
 
   NULL
+}
+
+mcp_oauth_metadata_url <- function(issuer, type) {
+  parsed <- httr2::url_parse(issuer)
+  path <- sub("/$", "", parsed$path %||% "")
+  parsed$path <- switch(
+    type,
+    oauth = paste0("/.well-known/oauth-authorization-server", path),
+    openid = paste0(path, "/.well-known/openid-configuration")
+  )
+  httr2::url_build(parsed)
 }
 
 mcp_select_authorization_server <- function(metadata, override = NULL, call = caller_env()) {
@@ -270,6 +291,25 @@ mcp_select_authorization_server <- function(metadata, override = NULL, call = ca
   }
 
   issuers[[1]]
+}
+
+mcp_validate_oauth_issuer <- function(issuer, allow_http = FALSE, call = caller_env()) {
+  host <- tolower(url_parse_or_null(issuer)$hostname %||% "")
+  allowed <- isTRUE(allow_http) ||
+    is_loopback_host_literal(host) ||
+    !is_private_host_literal(host)
+  if (allowed) {
+    return(invisible(TRUE))
+  }
+
+  cli::cli_abort(
+    c(
+      "MCP protected resource advertises an OAuth authorization server at a private address.",
+      i = "Advertised issuer: {.url {issuer}}.",
+      i = "Set {.field oauth.authorization_server} to use this issuer anyway."
+    ),
+    call = call
+  )
 }
 
 mcp_discover_protected_resource_metadata <- function(
