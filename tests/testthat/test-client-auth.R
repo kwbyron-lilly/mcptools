@@ -17,6 +17,28 @@ test_that("mcp_resp_www_authenticate parses Bearer challenge parameters", {
   expect_equal(challenge$scope, "read write")
 })
 
+test_that("protected-resource-metadata URLs honor a same-origin challenge only", {
+  same_origin <- mcp_protected_resource_metadata_urls(
+    "https://mcp.example.test/mcp",
+    challenge = list(
+      resource_metadata = "https://mcp.example.test/.well-known/oauth-protected-resource/mcp"
+    )
+  )
+  expect_equal(
+    same_origin[[1]],
+    "https://mcp.example.test/.well-known/oauth-protected-resource/mcp"
+  )
+
+  foreign_origin <- mcp_protected_resource_metadata_urls(
+    "https://mcp.example.test/mcp",
+    challenge = list(
+      resource_metadata = "http://169.254.169.254/latest/meta-data/"
+    )
+  )
+  expect_false("http://169.254.169.254/latest/meta-data/" %in% foreign_origin)
+  expect_true(all(startsWith(foreign_origin, "https://mcp.example.test/")))
+})
+
 test_that("authorization server selection errors on ambiguity without override", {
   expect_error(
     mcp_select_authorization_server(

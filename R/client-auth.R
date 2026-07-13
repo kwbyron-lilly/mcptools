@@ -307,7 +307,8 @@ mcp_protected_resource_metadata_urls <- function(resource_url, challenge = named
   path <- sub("/$", "", parsed$path %||% "")
 
   urls <- character()
-  if (!is.null(challenge$resource_metadata)) {
+  if (!is.null(challenge$resource_metadata) &&
+      identical(url_origin(challenge$resource_metadata), origin)) {
     urls <- c(urls, challenge$resource_metadata)
   }
   if (nzchar(path) && !identical(path, "/")) {
