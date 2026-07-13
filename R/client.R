@@ -715,8 +715,9 @@ mcp_transport_store_initialize <- function(
 mcp_request_tools_list_all <- function(transport, id, call = caller_env()) {
   tools <- list()
   next_cursor <- NULL
+  max_pages <- mcp_tools_list_max_pages()
 
-  repeat {
+  for (page in seq_len(max_pages)) {
     response <- mcp_transport_request(
       transport,
       mcp_request_tools_list(id = id, cursor = next_cursor)
@@ -736,6 +737,15 @@ mcp_request_tools_list_all <- function(transport, id, call = caller_env()) {
     if (is.null(next_cursor) || !nzchar(next_cursor)) {
       break
     }
+
+    if (page == max_pages) {
+      cli::cli_warn(c(
+        "MCP server returned more than {max_pages} pages of tools; stopping \\
+         pagination and using the tools collected so far.",
+        i = "Set the {.envvar MCPTOOLS_TOOLS_LIST_MAX_PAGES} environment \\
+             variable to raise the cap."
+      ))
+    }
   }
 
   response$result$tools <- tools
@@ -744,6 +754,13 @@ mcp_request_tools_list_all <- function(transport, id, call = caller_env()) {
     response = response,
     next_id = id
   )
+}
+
+mcp_tools_list_max_pages <- function() {
+  max_pages <- suppressWarnings(
+    as.integer(Sys.getenv("MCPTOOLS_TOOLS_LIST_MAX_PAGES", "100"))
+  )
+  if (is.na(max_pages) || max_pages < 1L) 100L else max_pages
 }
 
 mcp_ignore_tools <- function(ignore_tools = character(), call = caller_env()) {

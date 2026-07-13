@@ -340,6 +340,39 @@ test_that("Streamable HTTP JSON responses must match the request id", {
   )
 })
 
+test_that("tools/list pagination is capped and warns referencing the envvar", {
+  withr::local_envvar(MCPTOOLS_TOOLS_LIST_MAX_PAGES = "3")
+
+  transport <- mcp_transport_http(list(url = "https://example.test/mcp"))
+  transport$protocol_version <- latest_protocol_version
+
+  pages <- 0L
+  httr2::local_mocked_responses(function(req) {
+    message <- req$body$data
+    pages <<- pages + 1L
+    httr2::response(
+      status_code = 200L,
+      url = req$url,
+      method = req$method,
+      headers = list("Content-Type" = "application/json"),
+      body = charToRaw(to_json(jsonrpc_response(
+        message$id,
+        result = list(
+          tools = list(list(name = paste0("tool", pages))),
+          nextCursor = paste0("cursor", pages)
+        )
+      )))
+    )
+  })
+
+  expect_warning(
+    result <- mcp_request_tools_list_all(transport, id = 2L),
+    "MCPTOOLS_TOOLS_LIST_MAX_PAGES"
+  )
+  expect_equal(pages, 3L)
+  expect_length(result$response$result$tools, 3L)
+})
+
 test_that("HTTP requests transparently reinitialize after a session 404", {
   transport <- mcp_transport_http(list(url = "https://example.test/mcp"))
   transport$session_id <- "old-session"
