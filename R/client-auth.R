@@ -206,6 +206,19 @@ mcp_validate_oauth_endpoint <- function(url, field, allow_http = FALSE, call = c
   scheme <- tolower(parsed$scheme)
   host <- tolower(parsed$hostname)
 
+  host_allowed <- isTRUE(allow_http) ||
+    is_loopback_host_literal(host) ||
+    !is_private_host_literal(host)
+  if (!host_allowed) {
+    cli::cli_abort(
+      c(
+        "OAuth authorization server endpoints must not reference a private address.",
+        i = "{.field {field}}: {.url {url}}."
+      ),
+      call = call
+    )
+  }
+
   if (identical(scheme, "https")) {
     return(invisible(TRUE))
   }

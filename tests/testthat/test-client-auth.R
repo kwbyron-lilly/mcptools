@@ -217,6 +217,27 @@ test_that("OAuth authorization server endpoints must use HTTPS", {
   )
 })
 
+test_that("OAuth authorization server endpoints must not reference a private address", {
+  expect_error(
+    mcp_validate_oauth_metadata_endpoints(list(
+      token_endpoint = "https://auth.test/token",
+      registration_endpoint = "https://10.0.0.5/register"
+    )),
+    "private address"
+  )
+  expect_error(
+    mcp_validate_oauth_metadata_endpoints(list(
+      token_endpoint = "https://169.254.169.254/token"
+    )),
+    "private address"
+  )
+
+  expect_silent(mcp_validate_oauth_metadata_endpoints(
+    list(token_endpoint = "http://10.0.0.5/token"),
+    allow_http = TRUE
+  ))
+})
+
 test_that("OAuth redirect URIs must use HTTPS or local HTTP", {
   expect_silent(mcp_validate_oauth_redirect_uri("https://example.test/callback"))
   expect_silent(mcp_validate_oauth_redirect_uri("http://localhost:1410/oauth/callback"))
